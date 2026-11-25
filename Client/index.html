@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Collaborative CRDT Editor (Demo MVP)</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --panel-alt: #162032;
+      --border: #334155;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --green: #22c55e;
+      --red: #ef4444;
+      --amber: #f59e0b;
+      --mono: "Consolas", "Fira Code", "Courier New", monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Top Header */
+    header {
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .site-badge {
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-weight: 700;
+      padding: 4px 12px;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 999px;
+    }
+    .status-pill.online { background: rgba(34, 197, 94, 0.15); color: var(--green); border: 1px solid rgba(34,197,94,0.4); }
+    .status-pill.offline { background: rgba(239, 68, 68, 0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.4); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    label { font-size: 12.5px; color: var(--muted); }
+    select, button {
+      background: var(--panel-alt);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 11px;
+      font-size: 12.5px;
+      cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); }
+    button.btn-danger { border-color: rgba(239,68,68,0.6); color: #fca5a5; }
+    button.btn-success { border-color: rgba(34,197,94,0.6); color: #86efac; background: rgba(34,197,94,0.12); }
+
+    /* Main 2-column Grid */
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1.25fr 1fr;
+      overflow: hidden;
+    }
+
+    .editor-pane {
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      padding: 14px 18px;
+      gap: 10px;
+      overflow: hidden;
+    }
+    .section-note {
+      background: rgba(56, 189, 248, 0.08);
+      border-left: 3px solid var(--accent);
+      padding: 8px 12px;
+      font-size: 12px;
+      color: #cbd5e1;
+      border-radius: 0 6px 6px 0;
+      line-height: 1.45;
+    }
+    .editor-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #0b1120;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .editor-bar {
+      background: var(--panel-alt);
+      border-bottom: 1px solid var(--border);
+      padding: 6px 12px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 11.5px;
+      color: var(--muted);
+    }
+    textarea#editor {
+      flex: 1;
+      width: 100%;
+      background: transparent;
+      color: #f8fafc;
+      border: none;
+      outline: none;
+      resize: none;
+      padding: 14px;
+      font-family: var(--mono);
+      font-size: 14px;
+      line-height: 1.6;
+      tab-size: 4;
+    }
+
+    /* Right Inspector Pane */
+    .inspector-pane {
+      display: flex;
+      flex-direction: column;
+      background: var(--panel-alt);
+      overflow: hidden;
+    }
+    .tabs {
+      display: flex;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+    }
+    .tab-btn {
+      flex: 1;
+      border: none;
+      border-radius: 0;
+      border-bottom: 2px solid transparent;
+      padding: 10px;
+      font-weight: 600;
+      color: var(--muted);
+      background: transparent;
+    }
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+      background: rgba(56, 189, 248, 0.06);
+    }
+    .tab-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 14px;
+      display: none;
+    }
+    .tab-content.active { display: block; }
+
+    .stats-bar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+      font-size: 12px;
+    }
+    .stat-chip {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 6px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--mono);
+      font-size: 11.5px;
+    }
+    th, td {
+      text-align: left;
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      color: var(--muted);
+      font-family: "Segoe UI", sans-serif;
+      font-size: 11px;
+      text-transform: uppercase;
+      position: sticky;
+      top: 0;
+      background: var(--panel-alt);
+    }
+    tr.tombstone { opacity: 0.5; text-decoration: line-through; color: var(--red); }
+    .tag-alive { color: var(--green); font-weight: 600; }
+    .tag-dead { color: var(--red); font-weight: 600; }
+
+    .log-item {
+      background: #0b1120;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin-bottom: 8px;
+      font-size: 12px;
+    }
+    .log-head {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
+    .dir-OUT { color: var(--accent); }
+    .dir-IN { color: var(--green); }
+    .dir-SYS { color: var(--amber); }
+    .log-json {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: #94a3b8;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="site-badge" id="siteBadge">Client: ...</div>
+      <div class="status-pill offline" id="statusPill">
+        <span class="dot"></span>
+        <span id="statusText">Đang kết nối...</span>
+      </div>
+      <span id="pendingBadge" style="font-size:12px; color:#f59e0b; display:none;"></span>
+    </div>
+
+    <div class="controls">
+      <label for="delaySelect">Giả lập Lag mạng:</label>
+      <select id="delaySelect">
+        <option value="0">0 ms (Tức thì)</option>
+        <option value="500">500 ms (0.5s)</option>
+        <option value="2000">2000 ms (2s - Test gõ đụng độ)</option>
+      </select>
+      <button id="toggleOfflineBtn" class="btn-danger">Ngắt mạng (Offline)</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- TẦNG GIAO DIỆN (UI) -->
+    <section class="editor-pane">
+      <div class="section-note">
+        <b>Demo MVP (Tầng Frontend):</b> Hiện đang dùng <code>&lt;textarea&gt;</code> tối giản + bộ tính Diff ký tự để bắt sự kiện gõ/xóa/paste gửi xuống lõi <code>crdt_core.py</code>. Thành viên làm UI sau này có thể thay khung này bằng <b>CodeMirror</b> hoặc <b>Monaco Editor</b> mà giữ nguyên cấu trúc gói tin.
+      </div>
+      <div class="editor-wrapper">
+        <div class="editor-bar">
+          <span>shared_code.py — Collaborative Buffer</span>
+          <span id="cursorInfo">Độ dài: 0 ký tự | Con trỏ: 0</span>
+        </div>
+        <textarea id="editor" spellcheck="false" placeholder="Hãy gõ hoặc dán mã nguồn vào đây để thử đồng bộ với các tab/máy khác..."></textarea>
+      </div>
+    </section>
+
+    <!-- INSPECTOR: XEM BÊN TRONG CRDT VÀ GÓI TIN -->
+    <section class="inspector-pane">
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="atomsTab">Bộ nhớ CRDT (Atoms & Tombstones)</button>
+        <button class="tab-btn" data-tab="logsTab">Luồng gói tin JSON (API Contract)</button>
+      </div>
+
+      <div id="atomsTab" class="tab-content active">
+        <div class="stats-bar">
+          <div class="stat-chip">Sống (Alive): <b id="aliveCount" style="color:var(--green)">0</b></div>
+          <div class="stat-chip">Bia mộ (Tombstone): <b id="deadCount" style="color:var(--red)">0</b></div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>PosID (LSEQ)</th>
+              <th>Site</th>
+              <th>Clock</th>
+              <th>Ký tự</th>
+              <th>Trạng thái</th>
+            </tr>
+          </thead>
+          <tbody id="atomsBody"></tbody>
+        </table>
+      </div>
+
+      <div id="logsTab" class="tab-content">
+        <div id="logsContainer"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const editor = document.getElementById("editor");
+    const siteBadge = document.getElementById("siteBadge");
+    const statusPill = document.getElementById("statusPill");
+    const statusText = document.getElementById("statusText");
+    const pendingBadge = document.getElementById("pendingBadge");
+    const delaySelect = document.getElementById("delaySelect");
+    const toggleOfflineBtn = document.getElementById("toggleOfflineBtn");
+    const cursorInfo = document.getElementById("cursorInfo");
+    const atomsBody = document.getElementById("atomsBody");
+    const aliveCount = document.getElementById("aliveCount");
+    const deadCount = document.getElementById("deadCount");
+    const logsContainer = document.getElementById("logsContainer");
+
+    let lastKnownText = "";
+    let isOfflineMode = false;
+    let isApplyingRemote = false;
+
+    // Chuyển tab bên Inspector
+    document.querySelectorAll(".tab-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+        btn.classList.add("active");
+        document.getElementById(btn.dataset.tab).classList.add("active");
+      });
+    });
+
+    // Tính toán chính xác phần thay đổi (prefix/suffix diff) giữa chuỗi cũ và mới
+    // Hỗ trợ tốt cả gõ phím đơn, Backspace, Delete, Paste và bộ gõ tiếng Việt!
+    function computeDiff(oldStr, newStr) {
+      let start = 0;
+      const minLen = Math.min(oldStr.length, newStr.length);
+      while (start < minLen && oldStr[start] === newStr[start]) {
+        start++;
+      }
+
+      let oldEnd = oldStr.length - 1;
+      let newEnd = newStr.length - 1;
+      while (oldEnd >= start && newEnd >= start && oldStr[oldEnd] === newStr[newEnd]) {
+        oldEnd--;
+        newEnd--;
+      }
+
+      return {
+        index: start,
+        delete_count: oldEnd - start + 1,
+        insert_text: newStr.slice(start, newEnd + 1)
+      };
+    }
+
+    function updateCursorInfo() {
+      cursorInfo.textContent = `Độ dài: ${editor.value.length} ký tự | Con trỏ: ${editor.selectionStart}`;
+    }
+
+    function renderAtoms(atoms) {
+      let alive = 0, dead = 0;
+      const rows = atoms.map(a => {
+        if (a.is_deleted) dead++; else alive++;
+        const charDisplay = a.value === "\n" ? "\\n" : (a.value === " " ? "␣" : escapeHtml(a.value));
+        const statusHtml = a.is_deleted
+          ? `<span class="tag-dead">TOMBSTONE</span>`
+          : `<span class="tag-alive">ALIVE</span>`;
+        return `<tr class="${a.is_deleted ? "tombstone" : ""}">
+          <td>[${a.pos.join(", ")}]</td>
+          <td>${escapeHtml(a.site_id)}</td>
+          <td>${a.clock}</td>
+          <td><b>${charDisplay}</b></td>
+          <td>${statusHtml}</td>
+        </tr>`;
+      }).join("");
+      atomsBody.innerHTML = rows;
+      aliveCount.textContent = alive;
+      deadCount.textContent = dead;
+    }
+
+    function appendLog(log) {
+      if (!log) return;
+      const div = document.createElement("div");
+      div.className = "log-item";
+      const payloadStr = log.payload ? JSON.stringify(log.payload) : "";
+      div.innerHTML = `
+        <div class="log-head">
+          <span class="dir-${log.direction}">[${log.direction}] ${escapeHtml(log.summary)}</span>
+        </div>
+        ${payloadStr ? `<div class="log-json">${escapeHtml(payloadStr)}</div>` : ""}
+      `;
+      logsContainer.prepend(div);
+      while (logsContainer.children.length > 40) {
+        logsContainer.removeChild(logsContainer.lastChild);
+      }
+    }
+
+    function updateConnectionUI(online, offlineMode, pendingCount) {
+      if (offlineMode !== undefined) {
+        isOfflineMode = offlineMode;
+        if (isOfflineMode) {
+          toggleOfflineBtn.textContent = "Kết nối lại & Đồng bộ (Reconnect)";
+          toggleOfflineBtn.className = "btn-success";
+        } else {
+          toggleOfflineBtn.textContent = "Ngắt mạng (Offline)";
+          toggleOfflineBtn.className = "btn-danger";
+        }
+      }
+      if (online !== undefined) {
+        statusPill.className = `status-pill ${online ? "online" : "offline"}`;
+        statusText.textContent = online ? "ONLINE (Đã nối Relay)" : (isOfflineMode ? "OFFLINE (Cô lập cục bộ)" : "Mất kết nối Relay");
+      }
+      if (pendingCount !== undefined) {
+        if (pendingCount > 0) {
+          pendingBadge.style.display = "inline";
+          pendingBadge.textContent = `⏳ Chờ gửi: ${pendingCount} gói`;
+        } else {
+          pendingBadge.style.display = "none";
+        }
+      }
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    // Kết nối WebSocket cục bộ tới tiến trình client_node.py
+    const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
+    const uiWs = new WebSocket(`${wsProto}//${location.host}/ui_ws`);
+
+    uiWs.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+
+      if (msg.type === "full_state") {
+        document.title = `CRDT Demo - ${msg.site_id}`;
+        siteBadge.textContent = `Client: ${msg.site_id}`;
+        delaySelect.value = String(msg.delay_ms || 0);
+        updateConnectionUI(msg.online, msg.is_offline_mode, msg.pending_count);
+
+        isApplyingRemote = true;
+        editor.value = msg.text;
+        lastKnownText = msg.text;
+        isApplyingRemote = false;
+        updateCursorInfo();
+
+        renderAtoms(msg.atoms);
+        logsContainer.innerHTML = "";
+        (msg.logs || []).forEach(appendLog);
+      }
+      else if (msg.type === "local_ack") {
+        // Đồng bộ lại text chuẩn xác từ lõi nếu có sai khác nhỏ
+        renderAtoms(msg.atoms);
+      }
+      else if (msg.type === "remote_applied") {
+        // Giữ nguyên vị trí con trỏ thông minh khi người khác chèn/xóa phía trước
+        const selStart = editor.selectionStart;
+        const selEnd = editor.selectionEnd;
+        let newStart = selStart;
+        let newEnd = selEnd;
+
+        const info = msg.op_info || {};
+        if (info.applied && info.visible_index >= 0) {
+          if (info.action === "insert") {
+            if (info.visible_index <= selStart) newStart++;
+            if (info.visible_index <= selEnd) newEnd++;
+          } else if (info.action === "delete") {
+            if (info.visible_index < selStart) newStart = Math.max(0, newStart - 1);
+            if (info.visible_index < selEnd) newEnd = Math.max(0, newEnd - 1);
+          }
+        }
+
+        isApplyingRemote = true;
+        editor.value = msg.text;
+        lastKnownText = msg.text;
+        editor.setSelectionRange(newStart, newEnd);
+        isApplyingRemote = false;
+
+        updateCursorInfo();
+        renderAtoms(msg.atoms);
+        appendLog(msg.log);
+      }
+      else if (msg.type === "log_entry") {
+        appendLog(msg.log);
+        updateConnectionUI(undefined, undefined, msg.pending_count);
+      }
+      else if (msg.type === "status_update") {
+        updateConnectionUI(msg.online, msg.is_offline_mode, msg.pending_count);
+        if (msg.log) appendLog(msg.log);
+        if (msg.logs) {
+          logsContainer.innerHTML = "";
+          msg.logs.forEach(appendLog);
+        }
+      }
+    };
+
+    editor.addEventListener("input", () => {
+      if (isApplyingRemote) return;
+      const currentText = editor.value;
+      const diff = computeDiff(lastKnownText, currentText);
+      lastKnownText = currentText;
+      updateCursorInfo();
+
+      if (diff.delete_count > 0 || diff.insert_text.length > 0) {
+        uiWs.send(JSON.stringify({
+          type: "local_diff",
+          index: diff.index,
+          delete_count: diff.delete_count,
+          insert_text: diff.insert_text
+        }));
+      }
+    });
+
+    // Hỗ trợ bấm phím Tab để thụt lề code
+    editor.addEventListener("keydown", (e) => {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const start = editor.selectionStart;
+        const end = editor.selectionEnd;
+        const val = editor.value;
+        editor.value = val.substring(0, start) + "    " + val.substring(end);
+        editor.selectionStart = editor.selectionEnd = start + 4;
+        editor.dispatchEvent(new Event("input"));
+      }
+      setTimeout(updateCursorInfo, 0);
+    });
+    editor.addEventListener("click", updateCursorInfo);
+    editor.addEventListener("keyup", updateCursorInfo);
+
+    toggleOfflineBtn.addEventListener("click", () => {
+      uiWs.send(JSON.stringify({
+        type: "toggle_offline",
+        offline: !isOfflineMode
+      }));
+    });
+
+    delaySelect.addEventListener("change", () => {
+      uiWs.send(JSON.stringify({
+        type: "set_delay",
+        delay_ms: Number(delaySelect.value)
+      }));
+    });
+  </script>
+</body>
+</html>
